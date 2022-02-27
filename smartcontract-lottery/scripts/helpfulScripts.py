@@ -1,4 +1,3 @@
-from os import link
 from brownie import (
     network,
     config,
@@ -8,6 +7,7 @@ from brownie import (
     VRFCoordinatorMock,
     LinkToken,
 )
+from eth_account import Account
 
 FORKED_LOCAL_ENVS = ["mainnet-forked", "mainnet-forked-dev"]
 LOCAL_BLOCKCHAIN_ENVS = ["development", "ganache-local"]
@@ -29,7 +29,7 @@ def isForkedEnv() -> bool:
     return network.show_active() in FORKED_LOCAL_ENVS
 
 
-def getAccount(index=None, id=None):
+def getAccount(index=None, id=None) -> Account:
     if index:
         return accounts[index]
     elif id:
@@ -84,7 +84,7 @@ def deployMocks(contractType) -> None:
 
 def fundWithLink(
     contractAddress: str,
-    account=None,
+    account: Account = None,
     linkToken: Contract | None = None,
     amount: int = 10 ** 17,
 ):
