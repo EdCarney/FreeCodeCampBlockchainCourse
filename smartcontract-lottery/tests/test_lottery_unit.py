@@ -1,10 +1,11 @@
-from brownie import Lottery, accounts, network, config, exceptions
+from brownie import exceptions
 from scripts.deploy_lottery import deploy_lottery
 from scripts.helpfulScripts import (
     DECMIALS,
     STARTING_PRICE,
     fundWithLink,
     getAccount,
+    getContract,
     isTestEnv,
 )
 from web3 import Web3
@@ -20,8 +21,7 @@ def test_get_entrance_fee():
 
     # Act
     # entrance fee in ETH
-    tx = entrance_fee = lottery.getEntranceFee()
-    tx.wait(1)
+    entrance_fee = lottery.getEntranceFee()
 
     lotteryFeeInUsd = lottery.usdEntranceFee()
     mockAggregatorEthPriceInUsd = STARTING_PRICE / (10 ** DECMIALS)
@@ -73,3 +73,48 @@ def test_can_end_lottery():
     lottery.enter({"from": account, "value": lottery.getEntranceFee()})
     fundWithLink(lottery.address)
     lottery.endLottery({"from": account})
+
+    # Assert
+    assert lottery.lottery_state() == 2
+
+
+def test_can_pick_winner_correctly():
+    if not isTestEnv():
+        pytest.skip()
+
+    # Arrange
+    lottery = deploy_lottery()
+    account = getAccount()
+
+    # Act
+    lottery.startLottery({"from": account})
+
+    # enter lottery with multiple people
+    lottery.enter({"from": account, "value": lottery.getEntranceFee()})
+    lottery.enter({"from": getAccount(index=1), "value": lottery.getEntranceFee()})
+    lottery.enter({"from": getAccount(index=2), "value": lottery.getEntranceFee()})
+
+    # fund contract with LINK to allow call to LINK node
+    fundWithLink(lottery.address)
+
+    # end lottery, then get the request ID for the request to the LINK
+    # node from the event that we emit to the blockchain
+    tx = lottery.endLottery({"from": account})
+    request_id = tx.events["RequestedRandomness"]["requestId"]
+
+    # use this request ID to call the callBackWithRandomness function on
+    # the VRF node with some 'random' number that is returned to our
+    # lottery contract; note we know 777 % 3 = 0 so our account should
+    # be the winner as it was the first in the lottery
+    PSEUDO_RANDOM_NUM = 777
+    getContract("vrf_coordinator").callBackWithRandomness(
+        request_id, PSEUDO_RANDOM_NUM, lottery.address, {"from": account}
+    )
+
+    # Assert
+    starting_account_balance = account.balance()
+    lottery_balance = lottery.balance()
+
+    assert lottery.mostRecentWinner() == account
+    assert lottery.balance() == 0
+    assert account.balance() == starting_account_balance + lottery_balance
